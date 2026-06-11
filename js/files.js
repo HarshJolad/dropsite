@@ -6,6 +6,9 @@ const dropZone =
 const fileInput =
     document.getElementById("fileInput");
 
+/*
+ * Drag & Drop
+ */
 dropZone.addEventListener(
     "dragover",
     e => {
@@ -46,6 +49,9 @@ fileInput.addEventListener(
     }
 );
 
+/*
+ * Upload Files
+ */
 async function uploadFiles(
     selectedFiles
 ) {
@@ -54,15 +60,19 @@ async function uploadFiles(
 
         for (const file of selectedFiles) {
 
-            const filename = file.name;
+            const filename =
+                file.name;
 
             const { error } =
                 await sb.storage
-                .from("files")
-                .upload(
-                    filename,
-                    file
-                );
+                    .from("files")
+                    .upload(
+                        filename,
+                        file,
+                        {
+                            upsert: true
+                        }
+                    );
 
             if (error)
                 throw error;
@@ -82,6 +92,9 @@ async function uploadFiles(
     }
 }
 
+/*
+ * Delete File
+ */
 async function deleteFile(
     encodedName
 ) {
@@ -117,19 +130,83 @@ async function deleteFile(
     }
 }
 
+/*
+ * Download File
+ */
+async function downloadFile(
+    url,
+    encodedName
+) {
+
+    const filename =
+        decodeURIComponent(
+            encodedName
+        );
+
+    try {
+
+        const response =
+            await fetch(url);
+
+        if (!response.ok)
+            throw new Error(
+                "Download failed"
+            );
+
+        const blob =
+            await response.blob();
+
+        const objectUrl =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement("a");
+
+        a.href = objectUrl;
+        a.download = filename;
+
+        document.body.appendChild(a);
+
+        a.click();
+
+        a.remove();
+
+        URL.revokeObjectURL(
+            objectUrl
+        );
+
+    } catch (err) {
+
+        console.error(err);
+
+        showToast(
+            "download failed"
+        );
+    }
+}
+
+/*
+ * Load Files
+ */
 async function loadFiles() {
 
     try {
 
         const { data, error } =
             await sb.storage
-            .from("files")
-            .list();
+                .from("files")
+                .list();
 
         if (error)
             throw error;
 
-        files = data || [];
+        files =
+            (data || [])
+            .sort((a, b) =>
+                a.name.localeCompare(
+                    b.name
+                )
+            );
 
         renderFiles();
 
@@ -139,6 +216,9 @@ async function loadFiles() {
     }
 }
 
+/*
+ * Render Files
+ */
 function renderFiles() {
 
     const fileList =
@@ -161,10 +241,10 @@ function renderFiles() {
 
             const { data } =
                 sb.storage
-                .from("files")
-                .getPublicUrl(
-                    file.name
-                );
+                    .from("files")
+                    .getPublicUrl(
+                        file.name
+                    );
 
             return `
                 <div class="file-item">
@@ -175,18 +255,21 @@ function renderFiles() {
 
                     <div class="file-actions">
 
-                        <a
+                        <button
                             class="btn-ghost"
-                            href="${data.publicUrl}"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            onclick="downloadFile(
+                                '${data.publicUrl}',
+                                '${encodeURIComponent(file.name)}'
+                            )"
                         >
                             download
-                        </a>
+                        </button>
 
                         <button
                             class="btn-ghost"
-                            onclick="deleteFile('${encodeURIComponent(file.name)}')"
+                            onclick="deleteFile(
+                                '${encodeURIComponent(file.name)}'
+                            )"
                         >
                             delete
                         </button>
