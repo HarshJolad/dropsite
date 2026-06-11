@@ -78,8 +78,8 @@ fileInput.addEventListener(
  */
 async function uploadFiles(selectedFiles) {
 
+async function uploadFiles(selectedFiles) {
     try {
-
         for (const file of selectedFiles) {
 
             const id          = generateId();
@@ -116,12 +116,10 @@ async function uploadFiles(selectedFiles) {
             }
         }
 
-        await loadFiles();
-
+        await pingFileSignal();
         showToast("uploaded");
 
     } catch (err) {
-
         console.error(err);
 
         showToast("upload failed");
@@ -155,12 +153,12 @@ async function deleteFile(encodedStorageName, registryId) {
         if (regErr)
             throw regErr;
 
-        await loadFiles();
+        if (error) throw error;
 
+        await pingFileSignal();
         showToast("deleted");
 
     } catch (err) {
-
         console.error(err);
 
         showToast("delete failed");
@@ -219,9 +217,7 @@ function copyLink(url) {
  * Load Files — queries file_registry (RLS scopes to currentUid)
  */
 async function loadFiles() {
-
     try {
-
         const { data, error } =
             await sb
                 .from("file_registry")
@@ -233,18 +229,20 @@ async function loadFiles() {
 
         files = data || [];
 
+        files = data || [];
         renderFiles();
 
     } catch (err) {
-
         console.error(err);
     }
 }
 
-/*
- * Render Files
- */
-function renderFiles() {
+function fmtSize(b) {
+    if (!b) return "";
+    if (b < 1024) return b + " B";
+    if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+    return (b / 1048576).toFixed(1) + " MB";
+}
 
     const fileList =
         document.getElementById("fileList");
@@ -301,9 +299,9 @@ function renderFiles() {
                     </div>
 
                 </div>
-            `;
-
-        }).join("");
+            </div>
+        `;
+    }).join("");
 }
 
 /*
