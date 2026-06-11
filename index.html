@@ -14,6 +14,19 @@
 
 <body>
 
+<!-- Gate: visible by default, hidden by auth.js when token is valid -->
+<div id="gate">
+    <div class="gate-logo">drop/</div>
+    <div class="gate-msg">
+        devtools → application → cookies<br>
+        set <code>drop_token</code> to your access token<br>
+        then refresh
+    </div>
+</div>
+
+<!-- App: hidden by default, revealed by auth.js when token is valid -->
+<div id="appRoot" class="hidden">
+
 <header>
     <div class="logo">drop/</div>
 
@@ -86,11 +99,16 @@
 
 </main>
 
+</div> <!-- end appRoot -->
+
 <div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 
 <script src="js/config.js"></script>
+<script src="js/auth.js"></script>
 <script src="js/app.js"></script>
 <script src="js/clipboard.js"></script>
 <script src="js/files.js"></script>

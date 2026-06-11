@@ -1,7 +1,13 @@
-const clipInput = document.getElementById("clipInput");
+if (sb) {
+
+const clipInput =
+    document.getElementById("clipInput");
 
 let clipboardEntries = [];
 
+/*
+ * Load clipboard history (RLS scopes to currentUid automatically)
+ */
 async function loadClipboard() {
     try {
         const { data, error } =
@@ -17,10 +23,15 @@ async function loadClipboard() {
 
     } catch (err) {
         console.error(err);
+
         showToast("clipboard load failed");
     }
 }
 
+/*
+ * Save clipboard entry — uid is written explicitly so Supabase
+ * RLS can verify it matches auth.jwt()->>'uid' on insert
+ */
 async function saveClipboard() {
     const value = clipInput.value.trim();
     if (!value) return;
@@ -29,7 +40,10 @@ async function saveClipboard() {
         const { error } =
             await sb
                 .from("clipboard")
-                .insert({ content: value });
+                .insert({
+                    content: value,
+                    uid:     currentUid
+                });
 
         if (error) throw error;
 
@@ -42,6 +56,9 @@ async function saveClipboard() {
     }
 }
 
+/*
+ * Copy clipboard entry (copies raw markdown source)
+ */
 async function copyClip(id) {
     const item = clipboardEntries.find(x => x.id === id);
     if (!item) return;
@@ -73,42 +90,68 @@ async function deleteClip(id) {
     }
 }
 
+/*
+ * Render clipboard list with markdown
+ */
 function renderClipboard() {
-    const list = document.getElementById("clipboardList");
+
+    const list =
+        document.getElementById("clipboardList");
 
     if (!clipboardEntries.length) {
-        list.innerHTML = `<div class="empty">no clips yet</div>`;
+
+        list.innerHTML =
+            `<div class="empty">no clips yet</div>`;
+
         return;
     }
 
-    list.innerHTML = clipboardEntries.map(item => `
-        <div class="clipboard-item">
-            <span class="clipboard-text">${escapeHtml(item.content)}</span>
-            <div class="clipboard-actions">
-                <button class="btn-ghost" onclick="copyClip(${item.id})">copy</button>
-                <button class="btn-ghost danger" onclick="deleteClip(${item.id})">delete</button>
-            </div>
-        </div>
-    `).join("");
+    list.innerHTML =
+        clipboardEntries.map(item => {
+
+            const rendered =
+                DOMPurify.sanitize(
+                    marked.parse(item.content)
+                );
+
+            return `
+                <div class="clipboard-item">
+
+                    <div class="clipboard-text">
+                        ${rendered}
+                    </div>
+
+                    <div class="clipboard-actions">
+
+                        <button
+                            class="btn-ghost"
+                            onclick="copyClip(${item.id})"
+                        >copy</button>
+
+                        <button
+                            class="btn-ghost"
+                            onclick="deleteClip(${item.id})"
+                        >delete</button>
+
+                    </div>
+
+                </div>
+            `;
+
+        }).join("");
 }
 
-// Ctrl+Enter to save
-clipInput.addEventListener("keydown", e => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) saveClipboard();
-});
+document
+.getElementById("saveClipBtn")
+.addEventListener("click", saveClipboard);
 
-document.getElementById("saveClipBtn").addEventListener("click", saveClipboard);
-document.getElementById("clearClipBtn").addEventListener("click", () => {
-    clipInput.value = "";
-});
-
-// Real-time subscription
-sb.channel("clipboard-changes")
-    .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "clipboard" },
-        () => loadClipboard()
-    )
-    .subscribe();
+document
+.getElementById("clearClipBtn")
+.addEventListener(
+    "click",
+    () => { clipInput.value = ""; }
+);
 
 loadClipboard();
+
+} // end if (sb)
