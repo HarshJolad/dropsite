@@ -153,34 +153,29 @@ function renderClipboard() {
     list.innerHTML =
         clipboardEntries.map(item => {
 
+            const rendered =
+                DOMPurify.sanitize(
+                    marked.parse(item.content)
+                );
+
             return `
                 <div class="clipboard-item">
 
-                    <span
-                        class="clipboard-text"
-                    >
-                        ${escapeHtml(
-                            item.content
-                        )}
-                    </span>
+                    <div class="clipboard-text">
+                        ${rendered}
+                    </div>
 
-                    <div
-                        class="clipboard-actions"
-                    >
+                    <div class="clipboard-actions">
 
                         <button
                             class="btn-ghost"
                             onclick="copyClip(${item.id})"
-                        >
-                            copy
-                        </button>
+                        >copy</button>
 
                         <button
                             class="btn-ghost"
                             onclick="deleteClip(${item.id})"
-                        >
-                            delete
-                        </button>
+                        >delete</button>
 
                     </div>
 
