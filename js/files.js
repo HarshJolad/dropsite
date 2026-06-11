@@ -6,9 +6,6 @@ const dropZone =
 const fileInput =
     document.getElementById("fileInput");
 
-/*
- * Generate 5-char alphanumeric short ID
- */
 function generateId() {
 
     const chars =
@@ -25,16 +22,17 @@ function generateId() {
     return id;
 }
 
-/*
- * Upload Files
- * Uploads to flat storage, then registers in file_registry with uid.
- * If the registry insert is rejected (bad JWT signature), the storage
- * upload is rolled back.
- */
-async function uploadFiles(selectedFiles) {
+function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1048576).toFixed(1) + ' MB';
+}
 
 async function uploadFiles(selectedFiles) {
+
     try {
+
         for (const file of selectedFiles) {
 
             const id          = generateId();
@@ -70,19 +68,18 @@ async function uploadFiles(selectedFiles) {
             }
         }
 
-        await pingFileSignal();
+        await loadFiles();
+
         showToast("uploaded");
 
     } catch (err) {
+
         console.error(err);
 
         showToast("upload failed");
     }
 }
 
-/*
- * Delete File — removes from storage and file_registry
- */
 async function deleteFile(encodedStorageName, registryId) {
 
     const storageName =
@@ -107,21 +104,18 @@ async function deleteFile(encodedStorageName, registryId) {
         if (regErr)
             throw regErr;
 
-        if (error) throw error;
+        await loadFiles();
 
-        await pingFileSignal();
         showToast("deleted");
 
     } catch (err) {
+
         console.error(err);
 
         showToast("delete failed");
     }
 }
 
-/*
- * Download File
- */
 async function downloadFile(url, encodedName) {
 
     const filename =
@@ -156,22 +150,11 @@ async function downloadFile(url, encodedName) {
     }
 }
 
-/*
- * Copy share link to clipboard
- */
-function copyLink(url) {
 
-    navigator.clipboard
-        .writeText(url)
-        .then(() => showToast("link copied"))
-        .catch(() => showToast("copy failed"));
-}
-
-/*
- * Load Files — queries file_registry (RLS scopes to currentUid)
- */
 async function loadFiles() {
+
     try {
+
         const { data, error } =
             await sb
                 .from("file_registry")
@@ -184,21 +167,17 @@ async function loadFiles() {
 
         files = data || [];
 
-        files = data || [];
         renderFiles();
 
     } catch (err) {
+
         console.error(err);
+
         showToast(err.message || 'load failed');
     }
 }
 
-function fmtSize(b) {
-    if (!b) return "";
-    if (b < 1024) return b + " B";
-    if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
-    return (b / 1048576).toFixed(1) + " MB";
-}
+function renderFiles() {
 
     const fileList =
         document.getElementById("fileList");
@@ -219,9 +198,6 @@ function fmtSize(b) {
                     .from("files")
                     .getPublicUrl(file.storage_name);
 
-            const shareUrl =
-                `${window.location.origin}/${file.short_id}`;
-
             return `
                 <div class="file-item">
 
@@ -229,12 +205,11 @@ function fmtSize(b) {
                         ${escapeHtml(file.original_name)}
                     </span>
 
-                    <div class="file-actions">
+                    <span class="file-size">
+                        ${fmtSize(file.metadata?.size)}
+                    </span>
 
-                        <button
-                            class="btn-ghost"
-                            onclick="copyLink('${shareUrl}')"
-                        >link</button>
+                    <div class="file-actions">
 
                         <button
                             class="btn-ghost"
@@ -245,7 +220,7 @@ function fmtSize(b) {
                         >download</button>
 
                         <button
-                            class="btn-ghost"
+                            class="btn-ghost danger"
                             onclick="deleteFile(
                                 '${encodeURIComponent(file.storage_name)}',
                                 '${file.id}'
@@ -255,54 +230,11 @@ function fmtSize(b) {
                     </div>
 
                 </div>
-            </div>
-        `;
-    }).join("");
+            `;
+
+        }).join("");
 }
 
-/*
- * Delete expired files (>2h) for the current user
- */
-async function cleanupExpiredFiles() {
-
-    try {
-
-        const twoHoursAgo =
-            new Date(
-                Date.now() - 2 * 60 * 60 * 1000
-            ).toISOString();
-
-        const { data, error } =
-            await sb
-                .from("file_registry")
-                .select("id, storage_name")
-                .eq("uid", currentUid)
-                .lt("created_at", twoHoursAgo);
-
-        if (error)
-            throw error;
-
-        if (!data || !data.length)
-            return;
-
-        await sb.storage
-            .from("files")
-            .remove(data.map(f => f.storage_name));
-
-        await sb
-            .from("file_registry")
-            .delete()
-            .in("id", data.map(f => f.id));
-
-        console.log(
-            `Deleted ${data.length} expired files`
-        );
-
-    } catch (err) {
-
-        console.error(err);
-    }
-}
 
 async function initFiles() {
 
@@ -333,43 +265,7 @@ async function initFiles() {
         () => uploadFiles([...fileInput.files])
     );
 
-    const pathMatch =
-        window.location.pathname.match(
-            /^\/([a-z0-9]{5})$/
-        );
-
-    await cleanupExpiredFiles();
-
     await loadFiles();
-
-    if (pathMatch) {
-
-        const [, targetId] = pathMatch;
-
-        const target =
-            files.find(f => f.short_id === targetId);
-
-        if (target) {
-
-            const { data } =
-                sb.storage
-                    .from("files")
-                    .getPublicUrl(target.storage_name);
-
-            showToast(
-                `downloading ${target.original_name}`
-            );
-
-            await downloadFile(
-                data.publicUrl,
-                encodeURIComponent(target.original_name)
-            );
-
-        } else {
-
-            showToast("file not found");
-        }
-    }
 }
 
 if (sb) initFiles();
