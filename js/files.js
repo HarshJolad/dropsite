@@ -1,3 +1,5 @@
+if (sb) {
+
 let files = [];
 
 const dropZone =
@@ -7,7 +9,7 @@ const fileInput =
     document.getElementById("fileInput");
 
 /*
- * Helpers
+ * Generate 5-char alphanumeric short ID
  */
 function generateId() {
 
@@ -23,29 +25,6 @@ function generateId() {
     }
 
     return id;
-}
-
-function decodeFilename(storedName) {
-
-    const parts = storedName.split('_');
-
-    if (
-        parts.length >= 3 &&
-        /^\d{13}$/.test(parts[0]) &&
-        /^[a-z0-9]{5}$/.test(parts[1])
-    ) {
-        return {
-            timestamp: parseInt(parts[0]),
-            id: parts[1],
-            originalName: parts.slice(2).join('_')
-        };
-    }
-
-    return {
-        timestamp: parseInt(parts[0]),
-        id: null,
-        originalName: parts.slice(1).join('_')
-    };
 }
 
 /*
@@ -91,6 +70,11 @@ fileInput.addEventListener(
 
 /*
  * Upload Files
+ *
+ * Uploads to flat storage path, then writes a row to file_registry
+ * with the uid from the verified JWT. If the registry insert fails
+ * (e.g. Supabase rejects the JWT signature), the storage upload is
+ * rolled back.
  */
 async function uploadFiles(selectedFiles) {
 
@@ -98,22 +82,38 @@ async function uploadFiles(selectedFiles) {
 
         for (const file of selectedFiles) {
 
-            const id = generateId();
-            const timestamp = Date.now();
-            const filename =
+            const id          = generateId();
+            const timestamp   = Date.now();
+            const storageName =
                 `${timestamp}_${id}_${file.name}`;
 
-            const { error } =
+            const { error: uploadErr } =
                 await sb.storage
                     .from("files")
-                    .upload(
-                        filename,
-                        file,
-                        { upsert: true }
-                    );
+                    .upload(storageName, file, {
+                        upsert: true
+                    });
 
-            if (error)
-                throw error;
+            if (uploadErr)
+                throw uploadErr;
+
+            const { error: regErr } =
+                await sb
+                    .from("file_registry")
+                    .insert({
+                        short_id:      id,
+                        storage_name:  storageName,
+                        original_name: file.name,
+                        uid:           currentUid
+                    });
+
+            if (regErr) {
+                // Roll back the storage upload on registry failure
+                await sb.storage
+                    .from("files")
+                    .remove([storageName]);
+                throw regErr;
+            }
         }
 
         await loadFiles();
@@ -129,22 +129,31 @@ async function uploadFiles(selectedFiles) {
 }
 
 /*
- * Delete File
+ * Delete File — removes from storage and file_registry
  */
-async function deleteFile(encodedName) {
+async function deleteFile(encodedStorageName, registryId) {
 
-    const filename =
-        decodeURIComponent(encodedName);
+    const storageName =
+        decodeURIComponent(encodedStorageName);
 
     try {
 
-        const { error } =
+        const { error: storageErr } =
             await sb.storage
                 .from("files")
-                .remove([filename]);
+                .remove([storageName]);
 
-        if (error)
-            throw error;
+        if (storageErr)
+            throw storageErr;
+
+        const { error: regErr } =
+            await sb
+                .from("file_registry")
+                .delete()
+                .eq("id", registryId);
+
+        if (regErr)
+            throw regErr;
 
         await loadFiles();
 
@@ -173,15 +182,11 @@ async function downloadFile(url, encodedName) {
         if (!response.ok)
             throw new Error("Download failed");
 
-        const blob = await response.blob();
+        const blob      = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a         = document.createElement("a");
 
-        const objectUrl =
-            URL.createObjectURL(blob);
-
-        const a =
-            document.createElement("a");
-
-        a.href = objectUrl;
+        a.href     = objectUrl;
         a.download = filename;
 
         document.body.appendChild(a);
@@ -200,7 +205,7 @@ async function downloadFile(url, encodedName) {
 }
 
 /*
- * Copy share link
+ * Copy share link to clipboard
  */
 function copyLink(url) {
 
@@ -211,25 +216,22 @@ function copyLink(url) {
 }
 
 /*
- * Load Files
+ * Load Files — queries file_registry (RLS scopes to currentUid)
  */
 async function loadFiles() {
 
     try {
 
         const { data, error } =
-            await sb.storage
-                .from("files")
-                .list();
+            await sb
+                .from("file_registry")
+                .select("*")
+                .order("created_at", { ascending: false });
 
         if (error)
             throw error;
 
-        files =
-            (data || [])
-            .sort((a, b) =>
-                a.name.localeCompare(b.name)
-            );
+        files = data || [];
 
         renderFiles();
 
@@ -258,45 +260,41 @@ function renderFiles() {
     fileList.innerHTML =
         files.map(file => {
 
-            const decoded = decodeFilename(file.name);
-
             const { data } =
                 sb.storage
                     .from("files")
-                    .getPublicUrl(file.name);
+                    .getPublicUrl(file.storage_name);
 
-            const shareUrl = decoded.id
-                ? `${window.location.origin}/${decoded.id}`
-                : null;
+            const shareUrl =
+                `${window.location.origin}/${file.short_id}`;
 
             return `
                 <div class="file-item">
 
                     <span class="file-name">
-                        ${escapeHtml(decoded.originalName)}
+                        ${escapeHtml(file.original_name)}
                     </span>
 
                     <div class="file-actions">
 
-                        ${shareUrl ? `
-                            <button
-                                class="btn-ghost"
-                                onclick="copyLink('${shareUrl}')"
-                            >link</button>
-                        ` : ''}
+                        <button
+                            class="btn-ghost"
+                            onclick="copyLink('${shareUrl}')"
+                        >link</button>
 
                         <button
                             class="btn-ghost"
                             onclick="downloadFile(
                                 '${data.publicUrl}',
-                                '${encodeURIComponent(decoded.originalName)}'
+                                '${encodeURIComponent(file.original_name)}'
                             )"
                         >download</button>
 
                         <button
                             class="btn-ghost"
                             onclick="deleteFile(
-                                '${encodeURIComponent(file.name)}'
+                                '${encodeURIComponent(file.storage_name)}',
+                                '${file.id}'
                             )"
                         >delete</button>
 
@@ -309,50 +307,44 @@ function renderFiles() {
 }
 
 /*
- * Cleanup expired files
+ * Cleanup expired files (>2h old) for the current user
  */
 async function cleanupExpiredFiles() {
 
     try {
 
+        const twoHoursAgo =
+            new Date(
+                Date.now() - 2 * 60 * 60 * 1000
+            ).toISOString();
+
         const { data, error } =
-            await sb.storage
-                .from("files")
-                .list();
+            await sb
+                .from("file_registry")
+                .select("id, storage_name")
+                .lt("created_at", twoHoursAgo);
 
         if (error)
             throw error;
 
-        const now = Date.now();
+        if (!data || !data.length)
+            return;
 
-        const expired = [];
+        const storageNames = data.map(f => f.storage_name);
+        const ids          = data.map(f => f.id);
 
-        for (const file of data) {
+        await sb.storage
+            .from("files")
+            .remove(storageNames);
 
-            const timestamp =
-                parseInt(
-                    file.name.split("_")[0]
-                );
+        await sb
+            .from("file_registry")
+            .delete()
+            .in("id", ids);
 
-            if (
-                !isNaN(timestamp) &&
-                now - timestamp >
-                (2 * 60 * 60 * 1000)
-            ) {
-                expired.push(file.name);
-            }
-        }
-
-        if (expired.length) {
-
-            await sb.storage
-                .from("files")
-                .remove(expired);
-
-            console.log(
-                `Deleted ${expired.length} expired files`
-            );
-        }
+        console.log(
+            `Deleted ${data.length} expired files`
+        );
 
     } catch (err) {
 
@@ -375,30 +367,23 @@ async function cleanupExpiredFiles() {
 
         const [, targetId] = pathMatch;
 
-        const target = files.find(f => {
-            const d = decodeFilename(f.name);
-            return d.id === targetId;
-        });
+        const target =
+            files.find(f => f.short_id === targetId);
 
         if (target) {
-
-            const decoded =
-                decodeFilename(target.name);
 
             const { data } =
                 sb.storage
                     .from("files")
-                    .getPublicUrl(target.name);
+                    .getPublicUrl(target.storage_name);
 
             showToast(
-                `downloading ${decoded.originalName}`
+                `downloading ${target.original_name}`
             );
 
             await downloadFile(
                 data.publicUrl,
-                encodeURIComponent(
-                    decoded.originalName
-                )
+                encodeURIComponent(target.original_name)
             );
 
         } else {
@@ -408,3 +393,5 @@ async function cleanupExpiredFiles() {
     }
 
 })();
+
+} // end if (sb)

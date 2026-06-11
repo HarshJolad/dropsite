@@ -26,6 +26,49 @@ body {
     flex-direction: column;
 }
 
+/* Gate screen */
+#gate {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 999;
+}
+
+#gate.hidden {
+    display: none;
+}
+
+.gate-logo {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.gate-msg {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 2.2;
+    text-align: center;
+}
+
+.gate-msg code {
+    color: var(--accent);
+}
+
+/* App wrapper */
+#appRoot {
+    display: contents;
+}
+
+#appRoot.hidden {
+    display: none;
+}
+
 header {
     padding: 20px 24px;
     border-bottom: 1px solid var(--border);

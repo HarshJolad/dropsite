@@ -1,10 +1,12 @@
+if (sb) {
+
 const clipInput =
     document.getElementById("clipInput");
 
 let clipboardEntries = [];
 
 /*
- * Load clipboard history
+ * Load clipboard history (RLS scopes to currentUid automatically)
  */
 async function loadClipboard() {
 
@@ -31,14 +33,13 @@ async function loadClipboard() {
 
         console.error(err);
 
-        showToast(
-            "clipboard load failed"
-        );
+        showToast("clipboard load failed");
     }
 }
 
 /*
- * Save clipboard entry
+ * Save clipboard entry — uid is written explicitly so Supabase
+ * RLS can verify it matches auth.jwt()->>'uid' on insert
  */
 async function saveClipboard() {
 
@@ -54,7 +55,8 @@ async function saveClipboard() {
             await sb
                 .from("clipboard")
                 .insert({
-                    content: value
+                    content: value,
+                    uid:     currentUid
                 });
 
         if (error)
@@ -75,7 +77,7 @@ async function saveClipboard() {
 }
 
 /*
- * Copy clipboard entry
+ * Copy clipboard entry (copies raw markdown source)
  */
 async function copyClip(id) {
 
@@ -131,21 +133,17 @@ async function deleteClip(id) {
 }
 
 /*
- * Render clipboard list
+ * Render clipboard list with markdown
  */
 function renderClipboard() {
 
     const list =
-        document.getElementById(
-            "clipboardList"
-        );
+        document.getElementById("clipboardList");
 
     if (!clipboardEntries.length) {
 
         list.innerHTML =
-            `<div class="empty">
-                no clips yet
-            </div>`;
+            `<div class="empty">no clips yet</div>`;
 
         return;
     }
@@ -187,18 +185,15 @@ function renderClipboard() {
 
 document
 .getElementById("saveClipBtn")
-.addEventListener(
-    "click",
-    saveClipboard
-);
+.addEventListener("click", saveClipboard);
 
 document
 .getElementById("clearClipBtn")
 .addEventListener(
     "click",
-    () => {
-        clipInput.value = "";
-    }
+    () => { clipInput.value = ""; }
 );
 
 loadClipboard();
+
+} // end if (sb)
