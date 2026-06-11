@@ -60,8 +60,7 @@ async function uploadFiles(
 
         for (const file of selectedFiles) {
 
-            const filename =
-                file.name;
+            const filename = Date.now() + "_" + file.name;
 
             const { error } =
                 await sb.storage
@@ -282,4 +281,60 @@ function renderFiles() {
         }).join("");
 }
 
-loadFiles();
+
+async function cleanupExpiredFiles() {
+
+    try {
+
+        const { data, error } =
+            await sb.storage
+                .from("files")
+                .list();
+
+        if (error)
+            throw error;
+
+        const now = Date.now();
+
+        const expired = [];
+
+        for (const file of data) {
+
+            const timestamp =
+                parseInt(
+                    file.name.split("_")[0]
+                );
+
+            if (
+                !isNaN(timestamp) &&
+                now - timestamp >
+                (2 * 60 * 60 * 1000)
+            ) {
+                expired.push(file.name);
+            }
+        }
+
+        if (expired.length) {
+
+            await sb.storage
+                .from("files")
+                .remove(expired);
+
+            console.log(
+                `Deleted ${expired.length} expired files`
+            );
+        }
+
+    } catch (err) {
+
+        console.error(err);
+    }
+}
+
+(async () => {
+
+    await cleanupExpiredFiles();
+
+    await loadFiles();
+
+})();
