@@ -47,26 +47,44 @@ body {
     font-size: 15px;
     font-weight: 600;
     color: var(--accent);
+    margin-bottom: 8px;
 }
 
-.gate-msg {
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 2.2;
+.gate-input-row {
+    display: flex;
+    gap: 8px;
+    width: 240px;
+}
+
+.gate-input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 8px 10px;
     text-align: center;
+    letter-spacing: 3px;
 }
 
-.gate-msg code {
-    color: var(--accent);
+.gate-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.gate-error {
+    color: #ff6b6b;
+    font-size: 12px;
+    min-height: 16px;
 }
 
 /* App wrapper */
 #appRoot {
-    display: contents;
-}
-
-#appRoot.hidden {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 header {

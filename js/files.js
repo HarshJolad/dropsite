@@ -1,5 +1,3 @@
-if (sb) {
-
 let files = [];
 
 const dropZone =
@@ -8,9 +6,6 @@ const dropZone =
 const fileInput =
     document.getElementById("fileInput");
 
-/*
- * Generate 5-char alphanumeric short ID
- */
 function generateId() {
 
     const chars =
@@ -27,59 +22,17 @@ function generateId() {
     return id;
 }
 
-/*
- * Drag & Drop
- */
-dropZone.addEventListener(
-    "dragover",
-    e => {
-        e.preventDefault();
-        dropZone.classList.add("dragging");
-    }
-);
-
-dropZone.addEventListener(
-    "dragleave",
-    () => {
-        dropZone.classList.remove("dragging");
-    }
-);
-
-dropZone.addEventListener(
-    "drop",
-    e => {
-
-        e.preventDefault();
-
-        dropZone.classList.remove("dragging");
-
-        uploadFiles(
-            [...e.dataTransfer.files]
-        );
-    }
-);
-
-fileInput.addEventListener(
-    "change",
-    () => {
-        uploadFiles(
-            [...fileInput.files]
-        );
-    }
-);
-
-/*
- * Upload Files
- *
- * Uploads to flat storage path, then writes a row to file_registry
- * with the uid from the verified JWT. If the registry insert fails
- * (e.g. Supabase rejects the JWT signature), the storage upload is
- * rolled back.
- */
-async function uploadFiles(selectedFiles) {
+function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1048576).toFixed(1) + ' MB';
+}
 
 async function uploadFiles(selectedFiles) {
+
     try {
+
         for (const file of selectedFiles) {
 
             const id          = generateId();
@@ -108,7 +61,6 @@ async function uploadFiles(selectedFiles) {
                     });
 
             if (regErr) {
-                // Roll back the storage upload on registry failure
                 await sb.storage
                     .from("files")
                     .remove([storageName]);
@@ -116,19 +68,18 @@ async function uploadFiles(selectedFiles) {
             }
         }
 
-        await pingFileSignal();
+        await loadFiles();
+
         showToast("uploaded");
 
     } catch (err) {
+
         console.error(err);
 
         showToast("upload failed");
     }
 }
 
-/*
- * Delete File — removes from storage and file_registry
- */
 async function deleteFile(encodedStorageName, registryId) {
 
     const storageName =
@@ -153,21 +104,18 @@ async function deleteFile(encodedStorageName, registryId) {
         if (regErr)
             throw regErr;
 
-        if (error) throw error;
+        await loadFiles();
 
-        await pingFileSignal();
         showToast("deleted");
 
     } catch (err) {
+
         console.error(err);
 
         showToast("delete failed");
     }
 }
 
-/*
- * Download File
- */
 async function downloadFile(url, encodedName) {
 
     const filename =
@@ -202,26 +150,16 @@ async function downloadFile(url, encodedName) {
     }
 }
 
-/*
- * Copy share link to clipboard
- */
-function copyLink(url) {
 
-    navigator.clipboard
-        .writeText(url)
-        .then(() => showToast("link copied"))
-        .catch(() => showToast("copy failed"));
-}
-
-/*
- * Load Files — queries file_registry (RLS scopes to currentUid)
- */
 async function loadFiles() {
+
     try {
+
         const { data, error } =
             await sb
                 .from("file_registry")
                 .select("*")
+                .eq("uid", currentUid)
                 .order("created_at", { ascending: false });
 
         if (error)
@@ -229,20 +167,17 @@ async function loadFiles() {
 
         files = data || [];
 
-        files = data || [];
         renderFiles();
 
     } catch (err) {
+
         console.error(err);
+
+        showToast(err.message || 'load failed');
     }
 }
 
-function fmtSize(b) {
-    if (!b) return "";
-    if (b < 1024) return b + " B";
-    if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
-    return (b / 1048576).toFixed(1) + " MB";
-}
+function renderFiles() {
 
     const fileList =
         document.getElementById("fileList");
@@ -263,9 +198,6 @@ function fmtSize(b) {
                     .from("files")
                     .getPublicUrl(file.storage_name);
 
-            const shareUrl =
-                `${window.location.origin}/${file.short_id}`;
-
             return `
                 <div class="file-item">
 
@@ -273,12 +205,11 @@ function fmtSize(b) {
                         ${escapeHtml(file.original_name)}
                     </span>
 
-                    <div class="file-actions">
+                    <span class="file-size">
+                        ${fmtSize(file.metadata?.size)}
+                    </span>
 
-                        <button
-                            class="btn-ghost"
-                            onclick="copyLink('${shareUrl}')"
-                        >link</button>
+                    <div class="file-actions">
 
                         <button
                             class="btn-ghost"
@@ -289,7 +220,7 @@ function fmtSize(b) {
                         >download</button>
 
                         <button
-                            class="btn-ghost"
+                            class="btn-ghost danger"
                             onclick="deleteFile(
                                 '${encodeURIComponent(file.storage_name)}',
                                 '${file.id}'
@@ -299,97 +230,42 @@ function fmtSize(b) {
                     </div>
 
                 </div>
-            </div>
-        `;
-    }).join("");
+            `;
+
+        }).join("");
 }
 
-/*
- * Cleanup expired files (>2h old) for the current user
- */
-async function cleanupExpiredFiles() {
 
-    try {
+async function initFiles() {
 
-        const twoHoursAgo =
-            new Date(
-                Date.now() - 2 * 60 * 60 * 1000
-            ).toISOString();
+    dropZone.addEventListener(
+        "dragover",
+        e => {
+            e.preventDefault();
+            dropZone.classList.add("dragging");
+        }
+    );
 
-        const { data, error } =
-            await sb
-                .from("file_registry")
-                .select("id, storage_name")
-                .lt("created_at", twoHoursAgo);
+    dropZone.addEventListener(
+        "dragleave",
+        () => dropZone.classList.remove("dragging")
+    );
 
-        if (error)
-            throw error;
+    dropZone.addEventListener(
+        "drop",
+        e => {
+            e.preventDefault();
+            dropZone.classList.remove("dragging");
+            uploadFiles([...e.dataTransfer.files]);
+        }
+    );
 
-        if (!data || !data.length)
-            return;
-
-        const storageNames = data.map(f => f.storage_name);
-        const ids          = data.map(f => f.id);
-
-        await sb.storage
-            .from("files")
-            .remove(storageNames);
-
-        await sb
-            .from("file_registry")
-            .delete()
-            .in("id", ids);
-
-        console.log(
-            `Deleted ${data.length} expired files`
-        );
-
-    } catch (err) {
-
-        console.error(err);
-    }
-}
-
-(async () => {
-
-    const pathMatch =
-        window.location.pathname.match(
-            /^\/([a-z0-9]{5})$/
-        );
-
-    await cleanupExpiredFiles();
+    fileInput.addEventListener(
+        "change",
+        () => uploadFiles([...fileInput.files])
+    );
 
     await loadFiles();
+}
 
-    if (pathMatch) {
-
-        const [, targetId] = pathMatch;
-
-        const target =
-            files.find(f => f.short_id === targetId);
-
-        if (target) {
-
-            const { data } =
-                sb.storage
-                    .from("files")
-                    .getPublicUrl(target.storage_name);
-
-            showToast(
-                `downloading ${target.original_name}`
-            );
-
-            await downloadFile(
-                data.publicUrl,
-                encodeURIComponent(target.original_name)
-            );
-
-        } else {
-
-            showToast("file not found");
-        }
-    }
-
-})();
-
-} // end if (sb)
+if (sb) initFiles();

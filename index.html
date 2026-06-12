@@ -15,17 +15,25 @@
 <body>
 
 <!-- Gate: visible by default, hidden by auth.js when token is valid -->
-<div id="gate">
+<div id="gate" style="display:none">
     <div class="gate-logo">drop/</div>
-    <div class="gate-msg">
-        devtools → application → cookies<br>
-        set <code>drop_token</code> to your access token<br>
-        then refresh
+    <div class="gate-input-row">
+        <input
+            type="password"
+            id="gatePasswordInput"
+            class="gate-input"
+            placeholder="password"
+            maxlength="8"
+            autocomplete="off"
+            spellcheck="false"
+        >
+        <button class="btn primary" id="gateSubmit">enter</button>
     </div>
+    <div class="gate-error" id="gateError"></div>
 </div>
 
 <!-- App: hidden by default, revealed by auth.js when token is valid -->
-<div id="appRoot" class="hidden">
+<div id="appRoot" style="display:none">
 
 <header>
     <div class="logo">drop/</div>
